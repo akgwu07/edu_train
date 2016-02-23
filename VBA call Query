@@ -1,0 +1,190 @@
+Option Explicit
+
+Dim f As New UserForm1
+
+Dim str_Db As String
+Dim CommandQuery As String
+Dim TableObjectName As String
+
+Sub Z_Access_Query_ObjectResult()
+' Query Microsoft access database with global variable CommandQuery.
+' Return Table object, which is global as well.
+
+With ActiveSheet.ListObjects.Add(SourceType:=0, Source:=Array( _
+        "OLEDB;Provider=Microsoft.ACE.OLEDB.12.0;Password="""";User ID=Admin;Data Source=" & strDatabase & " ;Mode=Rea" _
+        , _
+        "dWrite;Extended Properties="""";Jet OLEDB:System database="""";Jet OLEDB:Registry Path="""";Jet OLEDB:Database Password="""";Jet OLEDB:E" _
+        , _
+        "ngine Type=6;Jet OLEDB:Database Locking Mode=1;Jet OLEDB:Global Partial Bulk Ops=2;Jet OLEDB:Global Bulk Transactions=1;Jet OLED" _
+        , _
+        "B:New Database Password="""";Jet OLEDB:Create System Database=False;Jet OLEDB:Encrypt Database=False;Jet OLEDB:Don't Copy Locale o" _
+        , _
+        "n Compact=False;Jet OLEDB:Compact Without Replica Repair=False;Jet OLEDB:SFP=False;Jet OLEDB:Support Complex Data=False;Jet OLED" _
+        , "B:Bypass UserInfo Validation=False"), Destination:=Range("$A$1")). _
+        QueryTable
+        .CommandType = xlCmdTable
+        .CommandText = Array(CommandQuery)
+        .RowNumbers = False
+        .FillAdjacentFormulas = False
+        .PreserveFormatting = True
+        .RefreshOnFileOpen = False
+        .BackgroundQuery = True
+        .RefreshStyle = xlInsertDeleteCells
+        .SavePassword = False
+        .SaveData = True
+        .AdjustColumnWidth = True
+        .RefreshPeriod = 0
+        .PreserveColumnInfo = True
+        .SourceDataFile = strDatabase
+        .ListObject.DisplayName = TableObjectName
+        .Refresh BackgroundQuery:=False
+    End With
+End Sub
+
+
+Sub ComparisonQuery_result()
+' upload items to be compared with into the Microsoft Access database, and perform query with results put into
+' two new sheets on the active workbook.
+
+Dim dbWb As String
+
+dbWb = Application.ActiveWorkbook.FullName
+
+'Debug.Print dbWb
+
+'Debug.Print Application.ActiveSheet.Name
+
+Dim appAccess As Access.Application
+Dim db As DAO.Database
+Dim qdef As DAO.QueryDef
+Dim rst As DAO.Recordset
+Dim strSQL As String
+
+Dim dsh As String
+Dim arUserSelection() As Variant
+Dim arUserRange As Range
+Dim oNewRow As ListRow
+Dim input_Total As Double
+Dim i As Integer
+Dim pctCompl As Single
+
+
+str_Db = < database filename >
+
+pctCompl = 5
+f.Show False
+progress pctCompl
+
+Set appAccess = GetObject(strDatabase)
+Set db = appAccess.CurrentDb
+
+pctCompl = 10
+progress pctCompl
+
+'empties the tbl_comparisonEntries
+
+db.Execute "DELETE tbl_comparisonEntries.* FROM tbl_comparisonEntries;"
+If TypeName(Selection) <> "Range" Then
+    MsgBox "Select a Range of cells first."
+    Exit Sub
+End If
+
+pctCompl = 25
+progress pctCompl
+
+If Selection.Areas.Count > 1 Then
+    MsgBox "Multiple selection areas are not allowed. Copy them into one range."
+    Exit Sub
+End If
+
+arUserSelection = Selection
+
+Set arUserRange = Selection
+ActiveWorkbook.Names.Add Name:="InputCodeQuantity", RefersTo:=arUserRange
+
+Debug.Print arUserRange(2, 1)
+Debug.Print arUserRange(2, 2)
+Debug.Print arUserRange(2, 3)
+input_Total = 0
+
+For i = 2 To UBound(arUserSelection, 1)
+    input_Total = input_Total + (arUserSelection(i, 2) * arUserSelection(i, 3))
+    Debug.Print input_Total
+Next i
+
+dsh = "[" & Application.ActiveSheet.Name & "$]"
+
+' creation of SQL to select from the excel workbook, at a specific range. Worksheets can used for sources as [InputSheet$]
+
+strSQL = "INSERT INTO tbl_comparisonEntries ([TangoeCode],[Qty])"
+strSQL = strSQL & "SELECT * FROM [Excel 8.0;HDR=YES;DATABASE=" & dbWb & "].[InputCodeQuantity]"
+
+Debug.Print strSQL
+
+db.Execute strSQL
+
+pctCompl = 50
+progress pctCompl
+
+appAccess.Quit
+db.Close
+Set rst = Nothing
+Set qdef = Nothing
+Set db = Nothing
+Set appAccess = Nothing
+
+pctCompl = 55
+progress pctCompl
+
+ActiveWorkbook.Worksheets.Add
+ActiveWorkbook.ActiveSheet.Name = "DBDetail"
+
+CommandQuery = "qry_First_withTDescr"
+TableObjectName = "DBDetail"
+
+Z_Access_Query_ObjectResult
+
+pctCompl = 75
+progress pctCompl
+
+ActiveWorkbook.Worksheets.Add
+ActiveWorkbook.ActiveSheet.Name = "DBSummary"
+
+CommandQuery = "qry_AllListingSummary"
+TableObjectName = "DBSummary"
+
+Z_Access_Query_ObjectResult
+
+pctCompl = 85
+progress pctCompl
+
+Set oNewRow = ActiveSheet.ListObjects("DBSummary").ListRows.Add(alwaysinsert:=True)
+oNewRow.Range.Cells(1, 1).Value = "InputSheet Rates"
+oNewRow.Range.Cells(1, 5).Value = input_Total
+
+ActiveWorkbook.Worksheets("DBSummary").ListObjects("DBSummary").Sort.SortFields.Clear
+    ActiveWorkbook.Worksheets("DBSummary").ListObjects("DBSummary").Sort.SortFields.Add _
+        Key:=Range("DBSummary[[#All],[SumOfProduct Total]]"), SortOn:=xlSortOnValues, Order:= _
+        xlAscending, DataOption:=xlSortTextAsNumbers
+    With ActiveWorkbook.Worksheets("DBSummary").ListObjects("DBSummary").Sort
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
+        
+Debug.Print "End Run"
+Unload f
+Set f = Nothing
+
+End Sub
+
+Sub progress(pctCompl As Single)
+	f.Text.Caption = pctCompl & "% Completed"
+	f.Bar.Width = pctCompl * 2
+
+End Sub
+
+
+
